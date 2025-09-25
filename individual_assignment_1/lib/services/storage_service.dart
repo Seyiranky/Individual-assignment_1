@@ -1,6 +1,6 @@
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'task.dart';
+import '../task.dart';
 
 class StorageService {
   static const String _key = 'tasks';

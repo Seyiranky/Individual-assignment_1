@@ -1,28 +1,32 @@
 import 'package:flutter/material.dart';
 import 'today_screen.dart';
-import 'calendar_screen.dart';
+import 'calender_screen.dart';
 import 'settings_screen.dart';
 
 void main() {
-  runApp(StudyPlannerApp());
+  runApp(const StudyPlannerApp());
 }
 
 class StudyPlannerApp extends StatelessWidget {
+  const StudyPlannerApp({super.key});
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Study Planner',
-      home: MainScreen(),
+      home: const MainScreen(),
     );
   }
 }
 
 class MainScreen extends StatefulWidget {
+  const MainScreen({super.key});
+
   @override
-  _MainScreenState createState() => _MainScreenState();
+  MainScreenState createState() => MainScreenState();
 }
 
-class _MainScreenState extends State<MainScreen> {
+class MainScreenState extends State<MainScreen> {
   int _currentIndex = 0;
 
   final List<Widget> _screens = [
