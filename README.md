@@ -80,7 +80,7 @@ Key Components
 1. Clone the repository
    bash
    git clone https://github.com/Seyiranky/Individual-assignment_1/
-   cd Individual-assignment_1
+   cd navigate
    
 
 2. Install dependencies
