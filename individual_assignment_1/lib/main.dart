@@ -70,28 +70,46 @@ class StorageService {
   static const String _reminderEnabledKey = 'reminder_enabled';
 
   Future<void> saveTasks(List<Task> tasks) async {
-    final prefs = await SharedPreferences.getInstance();
-    final tasksJson = tasks.map((task) => task.toJson()).toList();
-    await prefs.setString(_tasksKey, jsonEncode(tasksJson));
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final tasksJson = tasks.map((task) => task.toJson()).toList();
+      await prefs.setString(_tasksKey, jsonEncode(tasksJson));
+    } catch (e) {
+      debugPrint('Error saving tasks: $e');
+    }
   }
 
   Future<List<Task>> loadTasks() async {
-    final prefs = await SharedPreferences.getInstance();
-    final tasksString = prefs.getString(_tasksKey);
-    if (tasksString == null) return [];
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final tasksString = prefs.getString(_tasksKey);
+      if (tasksString == null) return [];
 
-    final List<dynamic> tasksJson = jsonDecode(tasksString);
-    return tasksJson.map((json) => Task.fromJson(json)).toList();
+      final List<dynamic> tasksJson = jsonDecode(tasksString);
+      return tasksJson.map((json) => Task.fromJson(json)).toList();
+    } catch (e) {
+      debugPrint('Error loading tasks: $e');
+      return [];
+    }
   }
 
   Future<void> setReminderEnabled(bool enabled) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_reminderEnabledKey, enabled);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_reminderEnabledKey, enabled);
+    } catch (e) {
+      debugPrint('Error saving reminder setting: $e');
+    }
   }
 
   Future<bool> isReminderEnabled() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getBool(_reminderEnabledKey) ?? true;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getBool(_reminderEnabledKey) ?? true;
+    } catch (e) {
+      debugPrint('Error loading reminder setting: $e');
+      return true;
+    }
   }
 }
 
@@ -113,7 +131,6 @@ class _MainScreenState extends State<MainScreen> {
   void initState() {
     super.initState();
     _loadTasks();
-    _checkReminders();
   }
 
   Future<void> _loadTasks() async {
@@ -122,40 +139,6 @@ class _MainScreenState extends State<MainScreen> {
       _tasks = tasks;
       _isLoading = false;
     });
-  }
-
-  Future<void> _checkReminders() async {
-    final reminderEnabled = await _storage.isReminderEnabled();
-    if (!reminderEnabled) return;
-
-    final now = DateTime.now();
-    final tasks = await _storage.loadTasks();
-
-    for (var task in tasks) {
-      if (task.reminderTime != null && !task.isCompleted) {
-        final diff = task.reminderTime!.difference(now).inMinutes;
-        if (diff >= 0 && diff <= 5) {
-          _showReminderDialog(task);
-          break;
-        }
-      }
-    }
-  }
-
-  void _showReminderDialog(Task task) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Task Reminder'),
-        content: Text('Don\'t forget: ${task.title}'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('OK'),
-          ),
-        ],
-      ),
-    );
   }
 
   void _onItemTapped(int index) {
@@ -255,6 +238,14 @@ class TodayScreen extends StatelessWidget {
           task.dueDate.day == today.day;
     }).toList();
 
+    // Sort tasks: incomplete first, then by due time
+    todayTasks.sort((a, b) {
+      if (a.isCompleted != b.isCompleted) {
+        return a.isCompleted ? 1 : -1;
+      }
+      return a.dueDate.compareTo(b.dueDate);
+    });
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Today'),
@@ -287,7 +278,10 @@ class TodayScreen extends StatelessWidget {
   void _showAddTaskDialog(BuildContext context) {
     showDialog(
       context: context,
-      builder: (context) => AddTaskDialog(onAddTask: onAddTask),
+      builder: (context) => AddTaskDialog(
+        onAddTask: onAddTask,
+        initialDate: DateTime.now(),
+      ),
     );
   }
 }
@@ -348,10 +342,18 @@ class _CalendarScreenState extends State<CalendarScreen> {
       ),
       body: Column(
         children: [
-          _buildCalendar(),
+          Expanded(
+            flex: 2,
+            child: SingleChildScrollView(
+              child: _buildCalendar(),
+            ),
+          ),
           if (_selectedDate != null) ...[
             const Divider(),
-            Expanded(child: _buildTaskList()),
+            Expanded(
+              flex: 3,
+              child: _buildTaskList(),
+            ),
           ],
         ],
       ),
@@ -371,6 +373,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
     return Container(
       padding: const EdgeInsets.all(8),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
@@ -415,8 +418,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                     task.dueDate.day == date.day,
               );
 
-              final isSelected =
-                  _selectedDate != null &&
+              final isSelected = _selectedDate != null &&
                   _selectedDate!.year == date.year &&
                   _selectedDate!.month == date.month &&
                   _selectedDate!.day == date.day;
@@ -433,8 +435,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
                     color: isSelected
                         ? Colors.blue
                         : hasTask
-                        ? Colors.blue.shade100
-                        : null,
+                            ? Colors.blue.shade100
+                            : null,
                     borderRadius: BorderRadius.circular(8),
                     border: Border.all(
                       color: hasTask ? Colors.blue : Colors.grey.shade300,
@@ -445,9 +447,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
                       '$day',
                       style: TextStyle(
                         color: isSelected ? Colors.white : Colors.black,
-                        fontWeight: hasTask
-                            ? FontWeight.bold
-                            : FontWeight.normal,
+                        fontWeight:
+                            hasTask ? FontWeight.bold : FontWeight.normal,
                       ),
                     ),
                   ),
@@ -467,8 +468,15 @@ class _CalendarScreenState extends State<CalendarScreen> {
           task.dueDate.day == _selectedDate!.day;
     }).toList();
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    // Sort tasks
+    tasksForDate.sort((a, b) {
+      if (a.isCompleted != b.isCompleted) {
+        return a.isCompleted ? 1 : -1;
+      }
+      return a.dueDate.compareTo(b.dueDate);
+    });
+
+    return ListView(
       children: [
         Padding(
           padding: const EdgeInsets.all(16),
@@ -477,20 +485,18 @@ class _CalendarScreenState extends State<CalendarScreen> {
             style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
           ),
         ),
-        Expanded(
-          child: tasksForDate.isEmpty
-              ? const Center(child: Text('No tasks for this date'))
-              : ListView.builder(
-                  itemCount: tasksForDate.length,
-                  itemBuilder: (context, index) {
-                    return TaskTile(
-                      task: tasksForDate[index],
-                      onUpdate: widget.onUpdateTask,
-                      onDelete: widget.onDeleteTask,
-                    );
-                  },
-                ),
-        ),
+        if (tasksForDate.isEmpty)
+          const Center(
+              child: Padding(
+            padding: EdgeInsets.all(16),
+            child: Text('No tasks for this date'),
+          ))
+        else
+          ...tasksForDate.map((task) => TaskTile(
+                task: task,
+                onUpdate: widget.onUpdateTask,
+                onDelete: widget.onDeleteTask,
+              )),
       ],
     );
   }
@@ -617,7 +623,7 @@ class TaskTile extends StatelessWidget {
             ),
             if (task.reminderTime != null)
               Text(
-                'Reminder: ${DateFormat('h:mm a').format(task.reminderTime!)}',
+                'Reminder: ${DateFormat('MMM d, h:mm a').format(task.reminderTime!)}',
                 style: const TextStyle(fontSize: 12, color: Colors.blue),
               ),
           ],
@@ -679,23 +685,24 @@ class AddTaskDialog extends StatefulWidget {
 
 class _AddTaskDialogState extends State<AddTaskDialog> {
   final _formKey = GlobalKey<FormState>();
-  late TextEditingController _titleController;
-  late TextEditingController _descriptionController;
-  late DateTime _dueDate;
-  DateTime? _reminderTime;
+  final _titleController = TextEditingController();
+  final _descriptionController = TextEditingController();
+  DateTime? _selectedDate;
+  TimeOfDay? _selectedTime;
 
   @override
   void initState() {
     super.initState();
-    _titleController = TextEditingController(
-      text: widget.initialTask?.title ?? '',
-    );
-    _descriptionController = TextEditingController(
-      text: widget.initialTask?.description ?? '',
-    );
-    _dueDate =
-        widget.initialTask?.dueDate ?? widget.initialDate ?? DateTime.now();
-    _reminderTime = widget.initialTask?.reminderTime;
+    if (widget.initialTask != null) {
+      _titleController.text = widget.initialTask!.title;
+      _descriptionController.text = widget.initialTask!.description;
+      _selectedDate = widget.initialTask!.dueDate;
+      if (widget.initialTask!.reminderTime != null) {
+        _selectedTime = TimeOfDay.fromDateTime(widget.initialTask!.reminderTime!);
+      }
+    } else if (widget.initialDate != null) {
+      _selectedDate = widget.initialDate;
+    }
   }
 
   @override
@@ -703,6 +710,33 @@ class _AddTaskDialogState extends State<AddTaskDialog> {
     _titleController.dispose();
     _descriptionController.dispose();
     super.dispose();
+  }
+
+  void _submit() {
+    if (_formKey.currentState!.validate()) {
+      DateTime? reminderDateTime;
+      if (_selectedDate != null && _selectedTime != null) {
+        reminderDateTime = DateTime(
+          _selectedDate!.year,
+          _selectedDate!.month,
+          _selectedDate!.day,
+          _selectedTime!.hour,
+          _selectedTime!.minute,
+        );
+      }
+
+      final newTask = Task(
+        id: widget.initialTask?.id ?? DateTime.now().millisecondsSinceEpoch.toString(),
+        title: _titleController.text,
+        description: _descriptionController.text,
+        dueDate: _selectedDate ?? DateTime.now(),
+        reminderTime: reminderDateTime,
+        isCompleted: widget.initialTask?.isCompleted ?? false,
+      );
+
+      widget.onAddTask(newTask);
+      Navigator.of(context).pop();
+    }
   }
 
   @override
@@ -714,6 +748,7 @@ class _AddTaskDialogState extends State<AddTaskDialog> {
           key: _formKey,
           child: Column(
             mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               TextFormField(
                 controller: _titleController,
@@ -721,12 +756,8 @@ class _AddTaskDialogState extends State<AddTaskDialog> {
                   labelText: 'Title *',
                   border: OutlineInputBorder(),
                 ),
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Please enter a title';
-                  }
-                  return null;
-                },
+                validator: (value) =>
+                    value == null || value.isEmpty ? 'Please enter a title' : null,
               ),
               const SizedBox(height: 16),
               TextFormField(
@@ -739,68 +770,50 @@ class _AddTaskDialogState extends State<AddTaskDialog> {
               ),
               const SizedBox(height: 16),
               ListTile(
-                title: const Text('Due Date *'),
-                subtitle: Text(DateFormat('MMM d, yyyy').format(_dueDate)),
+                title: Text(_selectedDate == null
+                    ? 'Pick a due date *'
+                    : 'Due: ${DateFormat('MMM d, yyyy').format(_selectedDate!)}'),
                 trailing: const Icon(Icons.calendar_today),
                 onTap: () async {
-                  final date = await showDatePicker(
+                  final picked = await showDatePicker(
                     context: context,
-                    initialDate: _dueDate,
-                    firstDate: DateTime(2020),
-                    lastDate: DateTime(2030),
+                    initialDate: _selectedDate ?? DateTime.now(),
+                    firstDate: DateTime(2000),
+                    lastDate: DateTime(2100),
                   );
-                  if (date != null) {
-                    setState(() {
-                      _dueDate = date;
-                    });
+                  if (picked != null) {
+                    setState(() => _selectedDate = picked);
                   }
                 },
               ),
+              const SizedBox(height: 8),
               ListTile(
-                title: const Text('Reminder Time'),
-                subtitle: Text(
-                  _reminderTime == null
-                      ? 'Not set'
-                      : DateFormat('MMM d, yyyy h:mm a').format(_reminderTime!),
-                ),
-                trailing: const Icon(Icons.alarm),
-                onTap: () async {
-                  final date = await showDatePicker(
-                    context: context,
-                    initialDate: _reminderTime ?? _dueDate,
-                    firstDate: DateTime.now(),
-                    lastDate: DateTime(2030),
-                  );
-                  if (date != null) {
-                    final time = await showTimePicker(
-                      context: context,
-                      initialTime: TimeOfDay.fromDateTime(
-                        _reminderTime ?? DateTime.now(),
+                title: Text(_selectedTime == null
+                    ? 'Set reminder time (optional)'
+                    : 'Reminder: ${_selectedTime!.format(context)}'),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (_selectedTime != null)
+                      IconButton(
+                        icon: const Icon(Icons.clear, size: 20),
+                        onPressed: () {
+                          setState(() => _selectedTime = null);
+                        },
                       ),
-                    );
-                    if (time != null) {
-                      setState(() {
-                        _reminderTime = DateTime(
-                          date.year,
-                          date.month,
-                          date.day,
-                          time.hour,
-                          time.minute,
-                        );
-                      });
-                    }
+                    const Icon(Icons.access_time),
+                  ],
+                ),
+                onTap: () async {
+                  final picked = await showTimePicker(
+                    context: context,
+                    initialTime: _selectedTime ?? TimeOfDay.now(),
+                  );
+                  if (picked != null) {
+                    setState(() => _selectedTime = picked);
                   }
                 },
               ),
-              if (_reminderTime != null)
-                TextButton(
-                  onPressed: () {
-                    setState(() {
-                      _reminderTime = null;
-                    });
-                  },
-                  child: const Text('Clear Reminder'),
-                ),
             ],
           ),
         ),
@@ -811,19 +824,7 @@ class _AddTaskDialogState extends State<AddTaskDialog> {
           child: const Text('Cancel'),
         ),
         ElevatedButton(
-          onPressed: () {
-            if (_formKey.currentState!.validate()) {
-              final task = Task(
-                id: widget.initialTask?.id ?? DateTime.now().toString(),
-                title: _titleController.text,
-                description: _descriptionController.text,
-                dueDate: _dueDate,
-                reminderTime: _reminderTime,
-              );
-              widget.onAddTask(task);
-              Navigator.pop(context);
-            }
-          },
+          onPressed: _submit,
           child: Text(widget.initialTask == null ? 'Add' : 'Save'),
         ),
       ],
